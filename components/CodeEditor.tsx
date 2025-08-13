@@ -15,6 +15,7 @@ interface CodeEditorProps {
   value: string
   onChange: (value: string | undefined) => void
   onCursorChange?: (position: { line: number; column: number }) => void
+  onSelectionChange?: (selection: { start: number; end: number; text: string }) => void
   language?: string
   theme?: string
   otherUsers?: User[]
@@ -25,6 +26,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   value,
   onChange,
   onCursorChange,
+  onSelectionChange,
   language = 'javascript',
   theme = 'vs-dark',
   otherUsers = [],
@@ -106,6 +108,33 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           line: e.position.lineNumber,
           column: e.position.column
         })
+      }
+    })
+
+    // Add selection change listener
+    editor.onDidChangeCursorSelection((e) => {
+      if (!isUpdatingFromRemote.current && onSelectionChange) {
+        const model = editor.getModel()
+        if (model) {
+          const start = model.getOffsetAt(e.selection.getStartPosition())
+          const end = model.getOffsetAt(e.selection.getEndPosition())
+          const selectedText = model.getValueInRange(e.selection)
+          
+          if (start !== end) {
+            onSelectionChange({
+              start,
+              end,
+              text: selectedText
+            })
+          } else {
+            // No selection, clear selection state
+            onSelectionChange({
+              start: 0,
+              end: 0,
+              text: ''
+            })
+          }
+        }
       }
     })
 

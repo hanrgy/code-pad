@@ -47,16 +47,33 @@ app.prepare().then(() => {
         rooms.set(roomId, {
           users: new Map(),
           code: `// Welcome to Code Pad Room: ${roomId}
-// Start typing your code here...
+// Real-time collaborative coding with AI assistance!
 
-function hello() {
-  console.log("Hello, collaborative coding!");
+// Example 1: Buggy function for AI testing
+function calculateSum(a, b) {
+  return a + b + 1; // BUG: Adding extra 1!
 }
 
-// Example buggy function for AI testing:
-function calculateSum(a, b) {
-  return a + b + 1; // Oops! Bug here
-}`,
+// Example 2: Function with potential issues
+function processUserData(users) {
+  var result = [];
+  for (var i = 0; i <= users.length; i++) { // BUG: <= instead of <
+    if (users[i].age > 18) {
+      result.push(users[i].name.toUpperCase()); // BUG: No null check
+    }
+  }
+  return result;
+}
+
+// Example 3: Poor code style
+function messy_function(x,y,z){
+var a=x+y;var b=a*z;if(b>100){return true;}else{return false;}}
+
+// Select any code above and try the AI actions:
+// 🔧 Fix - Debug and fix bugs
+// ⚡ Refactor - Improve code quality  
+// 💡 Explain - Understand the code
+// 🧪 Test - Generate unit tests`,
           language: 'javascript'
         })
       }

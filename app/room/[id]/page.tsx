@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import CodeEditor from '@/components/CodeEditor'
 import UserList from '@/components/UserList'
+import AIPanel from '@/components/AIPanel'
 import socketManager from '@/lib/socket'
 
 interface User {
@@ -21,6 +22,10 @@ export default function RoomPage() {
   const [currentUserId, setCurrentUserId] = useState<string>('')
   const [isConnected, setIsConnected] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState('Connecting...')
+  const [selectedCode, setSelectedCode] = useState<{ start: number; end: number; text: string }>({ start: 0, end: 0, text: '' })
+  const [aiSuggestion, setAiSuggestion] = useState<any>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   // Initialize socket connection
   useEffect(() => {
@@ -110,6 +115,57 @@ export default function RoomPage() {
     }
   }, [isConnected])
 
+  const handleSelectionChange = useCallback((selection: { start: number; end: number; text: string }) => {
+    setSelectedCode(selection)
+  }, [])
+
+  const handleAIAction = useCallback(async (action: 'fix' | 'refactor' | 'explain' | 'test') => {
+    if (!code && !selectedCode.text) {
+      setAiError('No code to analyze')
+      return
+    }
+
+    setAiLoading(true)
+    setAiError(null)
+    setAiSuggestion(null)
+
+    try {
+      const response = await fetch('/api/ai-assist', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          code: code,
+          language: 'javascript',
+          selection: selectedCode.text ? {
+            start: selectedCode.start,
+            end: selectedCode.end
+          } : undefined,
+          context: roomId
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'AI request failed')
+      }
+
+      const suggestion = await response.json()
+      setAiSuggestion(suggestion)
+      
+      // Broadcast AI suggestion to other users in the room (optional)
+      // socketManager.sendAISuggestion(suggestion)
+
+    } catch (error) {
+      console.error('AI Action Error:', error)
+      setAiError(error instanceof Error ? error.message : 'Unknown error occurred')
+    } finally {
+      setAiLoading(false)
+    }
+  }, [code, selectedCode, roomId])
+
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomId)
     // TODO: Add toast notification
@@ -156,6 +212,7 @@ export default function RoomPage() {
               value={code}
               onChange={handleCodeChange}
               onCursorChange={handleCursorChange}
+              onSelectionChange={handleSelectionChange}
               language="javascript"
               theme="vs-dark"
               otherUsers={connectedUsers}
@@ -165,31 +222,13 @@ export default function RoomPage() {
         </div>
 
         {/* AI Panel */}
-        <div className="w-80 bg-white border-l border-gray-200 p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">AI Assistant</h3>
-          
-          <div className="space-y-3">
-            <button className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
-              🔧 Fix Code
-            </button>
-            <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
-              ⚡ Refactor
-            </button>
-            <button className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
-              💡 Explain
-            </button>
-            <button className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
-              🧪 Add Tests
-            </button>
-          </div>
-
-          <div className="mt-6">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">AI Suggestions</h4>
-            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
-              Select some code and click an AI action to get suggestions!
-            </div>
-          </div>
-        </div>
+        <AIPanel
+          onAIAction={handleAIAction}
+          selectedCode={selectedCode.text}
+          isLoading={aiLoading}
+          suggestion={aiSuggestion}
+          error={aiError}
+        />
       </div>
     </div>
   )

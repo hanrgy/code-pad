@@ -1,34 +1,114 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import CodeEditor from '@/components/CodeEditor'
+import UserList from '@/components/UserList'
+import socketManager from '@/lib/socket'
+
+interface User {
+  id: string
+  name: string
+  color: string
+  cursor?: { line: number; column: number }
+}
 
 export default function RoomPage() {
   const params = useParams()
   const roomId = params.id as string
-  const [code, setCode] = useState(`// Welcome to Code Pad Room: ${roomId}
-// Start typing your code here...
+  const [code, setCode] = useState('')
+  const [connectedUsers, setConnectedUsers] = useState<User[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [isConnected, setIsConnected] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState('Connecting...')
 
-function hello() {
-  console.log("Hello, collaborative coding!");
-}
+  // Initialize socket connection
+  useEffect(() => {
+    const socket = socketManager.connect()
+    
+    if (socket) {
+      setCurrentUserId(socket.id || '')
+      
+      // Set up event listeners
+      socketManager.on('room-state', (data) => {
+        console.log('Received room state:', data)
+        setCode(data.code)
+        setConnectedUsers(data.users)
+        setIsConnected(true)
+        setConnectionStatus('Connected')
+      })
 
-// Example buggy function for AI testing:
-function calculateSum(a, b) {
-  return a + b + 1; // Oops! Bug here
-}`)
+      socketManager.on('user-joined', (user) => {
+        console.log('User joined:', user)
+        setConnectedUsers(prev => [...prev, user])
+      })
 
-  const [connectedUsers] = useState([
-    { id: '1', name: 'You', color: '#3B82F6' }
-  ])
+      socketManager.on('user-left', ({ userId, user }) => {
+        console.log('User left:', user)
+        setConnectedUsers(prev => prev.filter(u => u.id !== userId))
+      })
 
-  const handleCodeChange = (newCode: string | undefined) => {
-    if (newCode !== undefined) {
-      setCode(newCode)
-      // TODO: Broadcast to other users via Socket.IO
+      socketManager.on('code-update', ({ code: newCode, userId }) => {
+        console.log('Code update from:', userId)
+        setCode(newCode)
+      })
+
+      socketManager.on('cursor-update', ({ userId, position, user }) => {
+        setConnectedUsers(prev => 
+          prev.map(u => 
+            u.id === userId 
+              ? { ...u, cursor: position }
+              : u
+          )
+        )
+      })
+
+      // Join room once connected
+      const handleConnect = () => {
+        console.log('Socket connected, joining room:', roomId)
+        setCurrentUserId(socket.id || '')
+        socketManager.joinRoom(roomId, `User${Math.floor(Math.random() * 1000)}`)
+      }
+
+      if (socket.connected) {
+        handleConnect()
+      } else {
+        socket.on('connect', handleConnect)
+      }
+
+      socket.on('disconnect', () => {
+        setIsConnected(false)
+        setConnectionStatus('Disconnected')
+      })
+
+      socket.on('connect_error', () => {
+        setConnectionStatus('Connection Error')
+      })
     }
-  }
+
+    // Cleanup on unmount
+    return () => {
+      socketManager.off('room-state')
+      socketManager.off('user-joined')
+      socketManager.off('user-left')
+      socketManager.off('code-update')
+      socketManager.off('cursor-update')
+      socketManager.disconnect()
+    }
+  }, [roomId])
+
+  const handleCodeChange = useCallback((newCode: string | undefined) => {
+    if (newCode !== undefined && isConnected) {
+      setCode(newCode)
+      socketManager.sendCodeChange(newCode)
+    }
+  }, [isConnected])
+
+  const handleCursorChange = useCallback((position: { line: number; column: number }) => {
+    if (isConnected) {
+      socketManager.sendCursorChange(position)
+    }
+  }, [isConnected])
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomId)
@@ -53,21 +133,17 @@ function calculateSum(a, b) {
           </div>
         </div>
 
-        {/* Connected Users */}
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-500">Connected:</span>
-          <div className="flex space-x-1">
-            {connectedUsers.map((user) => (
-              <div
-                key={user.id}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold"
-                style={{ backgroundColor: user.color }}
-                title={user.name}
-              >
-                {user.name.charAt(0)}
-              </div>
-            ))}
+        {/* Connection Status & Connected Users */}
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <div 
+              className={`w-2 h-2 rounded-full ${
+                isConnected ? 'bg-green-500' : 'bg-red-500'
+              }`}
+            />
+            <span className="text-xs text-gray-500">{connectionStatus}</span>
           </div>
+          <UserList users={connectedUsers} currentUserId={currentUserId} />
         </div>
       </div>
 
@@ -79,8 +155,11 @@ function calculateSum(a, b) {
             <CodeEditor
               value={code}
               onChange={handleCodeChange}
+              onCursorChange={handleCursorChange}
               language="javascript"
               theme="vs-dark"
+              otherUsers={connectedUsers}
+              currentUserId={currentUserId}
             />
           </div>
         </div>

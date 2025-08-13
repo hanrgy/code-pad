@@ -1,25 +1,88 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useCallback } from 'react'
 import Editor from '@monaco-editor/react'
-import * as monaco from 'monaco-editor'
+import type * as monaco from 'monaco-editor'
+
+interface User {
+  id: string
+  name: string
+  color: string
+  cursor?: { line: number; column: number }
+}
 
 interface CodeEditorProps {
   value: string
   onChange: (value: string | undefined) => void
+  onCursorChange?: (position: { line: number; column: number }) => void
   language?: string
   theme?: string
+  otherUsers?: User[]
+  currentUserId?: string
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = ({
   value,
   onChange,
+  onCursorChange,
   language = 'javascript',
-  theme = 'vs-dark'
+  theme = 'vs-dark',
+  otherUsers = [],
+  currentUserId
 }) => {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const decorationsRef = useRef<string[]>([])
+  const isUpdatingFromRemote = useRef(false)
 
-  const handleEditorDidMount = (editor: monaco.editor.IStandaloneCodeEditor) => {
+  // Update other users' cursors
+  const updateCursorDecorations = useCallback(() => {
+    if (!editorRef.current) return
+
+    const editor = editorRef.current
+    const model = editor.getModel()
+    if (!model) return
+
+    // Clear previous decorations
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, [])
+
+    // Add decorations for other users' cursors
+    const newDecorations: monaco.editor.IModelDeltaDecoration[] = []
+
+    otherUsers.forEach((user) => {
+      if (user.cursor && user.id !== currentUserId) {
+        const { line, column } = user.cursor
+        
+        // Ensure the position is valid
+        const lineCount = model.getLineCount()
+        const validLine = Math.max(1, Math.min(line, lineCount))
+        const lineLength = model.getLineLength(validLine)
+        const validColumn = Math.max(1, Math.min(column, lineLength + 1))
+
+        // Only create decorations if monaco is available (client-side)
+        if (typeof window !== 'undefined') {
+          const monacoInstance = (window as any).monaco
+          if (monacoInstance) {
+            newDecorations.push({
+              range: new monacoInstance.Range(validLine, validColumn, validLine, validColumn),
+              options: {
+                className: 'other-user-cursor',
+                afterContentClassName: 'other-user-cursor-after',
+                stickiness: monacoInstance.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                hoverMessage: { value: `${user.name}'s cursor` },
+                beforeContentClassName: 'other-user-cursor-before',
+                glyphMarginClassName: 'other-user-cursor-glyph'
+              }
+            })
+          }
+        }
+      }
+    })
+
+    // Apply new decorations
+    decorationsRef.current = editor.deltaDecorations([], newDecorations)
+  }, [otherUsers, currentUserId])
+
+  const handleEditorDidMount = (editor: monaco.editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editor
     
     // Configure editor options
@@ -36,13 +99,43 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       cursorSmoothCaretAnimation: 'on',
     })
 
+    // Add cursor change listener
+    editor.onDidChangeCursorPosition((e) => {
+      if (!isUpdatingFromRemote.current && onCursorChange) {
+        onCursorChange({
+          line: e.position.lineNumber,
+          column: e.position.column
+        })
+      }
+    })
+
     // Focus the editor
     editor.focus()
   }
 
   const handleEditorChange = (value: string | undefined) => {
-    onChange(value)
+    if (!isUpdatingFromRemote.current) {
+      onChange(value)
+    }
   }
+
+  // Update value from remote without triggering change event
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.getValue() !== value) {
+      isUpdatingFromRemote.current = true
+      const position = editorRef.current.getPosition()
+      editorRef.current.setValue(value)
+      if (position) {
+        editorRef.current.setPosition(position)
+      }
+      isUpdatingFromRemote.current = false
+    }
+  }, [value])
+
+  // Update cursor decorations when other users change
+  useEffect(() => {
+    updateCursorDecorations()
+  }, [updateCursorDecorations])
 
   return (
     <div className="h-full w-full border border-gray-200 rounded-lg overflow-hidden">

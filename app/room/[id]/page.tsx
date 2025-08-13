@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import CodeEditor from '@/components/CodeEditor'
 import UserList from '@/components/UserList'
 import AIPanel from '@/components/AIPanel'
+import Toast from '@/components/Toast'
 import socketManager from '@/lib/socket'
 
 interface User {
@@ -26,6 +27,7 @@ export default function RoomPage() {
   const [aiSuggestion, setAiSuggestion] = useState<any>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
   // Initialize socket connection
   useEffect(() => {
@@ -46,11 +48,13 @@ export default function RoomPage() {
       socketManager.on('user-joined', (user) => {
         console.log('User joined:', user)
         setConnectedUsers(prev => [...prev, user])
+        setToast({ message: `${user.name} joined the room`, type: 'info' })
       })
 
       socketManager.on('user-left', ({ userId, user }) => {
         console.log('User left:', user)
         setConnectedUsers(prev => prev.filter(u => u.id !== userId))
+        setToast({ message: `${user.name} left the room`, type: 'info' })
       })
 
       socketManager.on('code-update', ({ code: newCode, userId }) => {
@@ -154,6 +158,7 @@ export default function RoomPage() {
 
       const suggestion = await response.json()
       setAiSuggestion(suggestion)
+      setToast({ message: `AI ${action} completed successfully!`, type: 'success' })
       
       // Broadcast AI suggestion to other users in the room (optional)
       // socketManager.sendAISuggestion(suggestion)
@@ -166,9 +171,13 @@ export default function RoomPage() {
     }
   }, [code, selectedCode, roomId])
 
-  const copyRoomCode = () => {
-    navigator.clipboard.writeText(roomId)
-    // TODO: Add toast notification
+  const copyRoomCode = async () => {
+    try {
+      await navigator.clipboard.writeText(roomId)
+      setToast({ message: 'Room code copied to clipboard!', type: 'success' })
+    } catch (error) {
+      setToast({ message: 'Failed to copy room code', type: 'error' })
+    }
   }
 
   return (
@@ -193,8 +202,8 @@ export default function RoomPage() {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
             <div 
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? 'bg-green-500' : 'bg-red-500'
+              className={`w-2 h-2 rounded-full transition-colors ${
+                isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'
               }`}
             />
             <span className="text-xs text-gray-500">{connectionStatus}</span>
@@ -230,6 +239,15 @@ export default function RoomPage() {
           error={aiError}
         />
       </div>
+
+      {/* Toast Notifications */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   )
 }

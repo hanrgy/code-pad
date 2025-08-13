@@ -87,54 +87,89 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const handleEditorDidMount = (editor: monaco.editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     editorRef.current = editor
     
-    // Configure editor options
+    // Configure editor options for better performance
     editor.updateOptions({
       minimap: { enabled: false },
       fontSize: 14,
       lineHeight: 20,
       wordWrap: 'on',
-      automaticLayout: true,
+      automaticLayout: false, // Disable automatic layout to prevent forced reflows
       scrollBeyondLastLine: false,
       renderLineHighlight: 'line',
       selectOnLineNumbers: true,
       cursorBlinking: 'blink',
-      cursorSmoothCaretAnimation: 'on',
+      cursorSmoothCaretAnimation: 'off', // Reduce animation overhead
+      renderValidationDecorations: 'off', // Reduce DOM operations
+      renderWhitespace: 'none',
+      renderControlCharacters: false,
+      disableLayerHinting: true, // Improve performance
+      smoothScrolling: false, // Reduce animation overhead
     })
+    
+    // Manual layout trigger to replace automaticLayout with better performance
+    const resizeObserver = new ResizeObserver(() => {
+      // Use requestIdleCallback to defer layout until browser is idle
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(() => {
+          editor.layout()
+        })
+      } else {
+        // Fallback for browsers without requestIdleCallback
+        setTimeout(() => {
+          editor.layout()
+        }, 0)
+      }
+    })
+    resizeObserver.observe(editor.getContainerDomNode())
 
-    // Add cursor change listener
+    // Add throttled cursor change listener to reduce performance overhead
+    let cursorUpdateTimeout: NodeJS.Timeout | null = null
     editor.onDidChangeCursorPosition((e) => {
       if (!isUpdatingFromRemote.current && onCursorChange) {
-        onCursorChange({
-          line: e.position.lineNumber,
-          column: e.position.column
-        })
+        // Throttle cursor updates to reduce network and rendering overhead
+        if (cursorUpdateTimeout) {
+          clearTimeout(cursorUpdateTimeout)
+        }
+        cursorUpdateTimeout = setTimeout(() => {
+          onCursorChange({
+            line: e.position.lineNumber,
+            column: e.position.column
+          })
+        }, 50) // 50ms throttle
       }
     })
 
-    // Add selection change listener
+    // Add throttled selection change listener
+    let selectionUpdateTimeout: NodeJS.Timeout | null = null
     editor.onDidChangeCursorSelection((e) => {
       if (!isUpdatingFromRemote.current && onSelectionChange) {
-        const model = editor.getModel()
-        if (model) {
-          const start = model.getOffsetAt(e.selection.getStartPosition())
-          const end = model.getOffsetAt(e.selection.getEndPosition())
-          const selectedText = model.getValueInRange(e.selection)
-          
-          if (start !== end) {
-            onSelectionChange({
-              start,
-              end,
-              text: selectedText
-            })
-          } else {
-            // No selection, clear selection state
-            onSelectionChange({
-              start: 0,
-              end: 0,
-              text: ''
-            })
-          }
+        // Throttle selection updates to reduce performance overhead
+        if (selectionUpdateTimeout) {
+          clearTimeout(selectionUpdateTimeout)
         }
+        selectionUpdateTimeout = setTimeout(() => {
+          const model = editor.getModel()
+          if (model) {
+            const start = model.getOffsetAt(e.selection.getStartPosition())
+            const end = model.getOffsetAt(e.selection.getEndPosition())
+            const selectedText = model.getValueInRange(e.selection)
+            
+            if (start !== end) {
+              onSelectionChange({
+                start,
+                end,
+                text: selectedText
+              })
+            } else {
+              // No selection, clear selection state
+              onSelectionChange({
+                start: 0,
+                end: 0,
+                text: ''
+              })
+            }
+          }
+        }, 100) // 100ms throttle for selections
       }
     })
 
@@ -167,8 +202,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [updateCursorDecorations])
 
   return (
-    <div className="h-full w-full border border-gray-200 rounded-lg overflow-hidden">
+    <div className="h-full w-full border border-gray-200 rounded-lg overflow-hidden" style={{ maxWidth: '100%' }}>
       <Editor
+        width="100%"
         height="100%"
         defaultLanguage={language}
         language={language}
@@ -182,12 +218,25 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           rulers: [],
           overviewRulerBorder: false,
           hideCursorInOverviewRuler: true,
+          automaticLayout: false, // Performance: disable automatic layout
+          wordWrap: 'on',
+          wordWrapColumn: 80,
+          scrollBeyondLastLine: false,
+          minimap: { enabled: false }, // Performance: disable minimap
+          renderValidationDecorations: 'off', // Performance: reduce DOM operations
+          renderWhitespace: 'none', // Performance: reduce rendering
+          renderControlCharacters: false, // Performance: reduce rendering
+          disableLayerHinting: true, // Performance: improve rendering
+          smoothScrolling: false, // Performance: reduce animation overhead
+          cursorSmoothCaretAnimation: 'off', // Performance: reduce animation
           scrollbar: {
             useShadows: false,
             verticalHasArrows: false,
             horizontalHasArrows: false,
             verticalScrollbarSize: 10,
             horizontalScrollbarSize: 10,
+            handleMouseWheel: true,
+            alwaysConsumeMouseWheel: false, // Performance: reduce event handling
           },
         }}
       />

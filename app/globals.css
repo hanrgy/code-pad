@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Suppress ResizeObserver errors globally */
+@media screen {
+  html {
+    /* This helps prevent ResizeObserver loop errors */
+    overflow: hidden;
+  }
+  
+  body {
+    overflow: auto;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

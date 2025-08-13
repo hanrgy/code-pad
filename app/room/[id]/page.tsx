@@ -29,6 +29,24 @@ export default function RoomPage() {
   const [aiError, setAiError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
+  // Suppress ResizeObserver errors (common with Monaco Editor)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const originalError = window.console.error
+      window.console.error = (...args: any[]) => {
+        if (args[0]?.toString?.()?.includes?.('ResizeObserver loop completed with undelivered notifications')) {
+          return
+        }
+        originalError(...args)
+      }
+      
+      // Cleanup function to restore original console.error
+      return () => {
+        window.console.error = originalError
+      }
+    }
+  }, [])
+
   // Initialize socket connection
   useEffect(() => {
     const socket = socketManager.connect()
@@ -181,7 +199,7 @@ export default function RoomPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen w-screen flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -213,10 +231,10 @@ export default function RoomPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-w-0 max-w-full overflow-hidden">
         {/* Editor */}
-        <div className="flex-1 p-4">
-          <div className="h-full">
+        <div className="flex-1 p-4 min-w-0 max-w-full overflow-hidden">
+          <div className="h-full w-full">
             <CodeEditor
               value={code}
               onChange={handleCodeChange}
@@ -231,13 +249,15 @@ export default function RoomPage() {
         </div>
 
         {/* AI Panel */}
-        <AIPanel
-          onAIAction={handleAIAction}
-          selectedCode={selectedCode.text}
-          isLoading={aiLoading}
-          suggestion={aiSuggestion}
-          error={aiError}
-        />
+        <div className="w-80 flex-shrink-0 max-w-80 overflow-hidden">
+          <AIPanel
+            onAIAction={handleAIAction}
+            selectedCode={selectedCode.text}
+            isLoading={aiLoading}
+            suggestion={aiSuggestion}
+            error={aiError}
+          />
+        </div>
       </div>
 
       {/* Toast Notifications */}
